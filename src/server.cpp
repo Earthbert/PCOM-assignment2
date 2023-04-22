@@ -24,7 +24,11 @@ int receive_topic(int fd, struct udp_client_info *udp_info) {
 }
 
 void handle_topic(udp_client_info *udp_info) {
-	printf("%s %hhd %s\n", udp_info->packet.topic, udp_info->packet.data_type, udp_info->packet.payload);
+
+}
+
+void handle_tcp_client_request() {
+
 }
 
 int main(int argc, char const *argv[]) {
@@ -40,6 +44,10 @@ int main(int argc, char const *argv[]) {
 	int tcp_fd, udp_fd, rc;
 
 	struct udp_client_info udp_p;
+	struct app_header tcp_p;
+
+	// Create server log
+	FILE *server_log = fopen("server.log", "w");
 
 	// Save server port number as number
 	uint16_t port;
@@ -76,9 +84,13 @@ int main(int argc, char const *argv[]) {
 	rc = bind(udp_fd, (const struct sockaddr *)&servaddr, sizeof(servaddr));
 	DIE(rc < 0, "udp failed");
 
+	// Make tcp_fd passive
+	rc = listen(tcp_fd, MAX_CONNECTIONS);
+	DIE(rc < 0, "listen");
+
 	// Set up poll
 	struct pollfd poll_fds[MAX_CONNECTIONS];
-	int nr_conn = 2;
+	int nr_fds = 2;
 	// Add both server sockets to poll
 	poll_fds[0].fd = tcp_fd;
 	poll_fds[0].events = POLLIN;
@@ -86,16 +98,44 @@ int main(int argc, char const *argv[]) {
 	poll_fds[1].events = POLLIN;
 
 	while (1) {
-		poll(poll_fds, nr_conn, -1);
+		poll(poll_fds, nr_fds, -1);
 
-		for (int i = 0; i < nr_conn; i++) {
+		for (int i = 0; i < nr_fds; i++) {
 			if (poll_fds[i].revents & POLLIN) {
 				if (poll_fds[i].fd == udp_fd) {
 					rc = receive_topic(poll_fds[i].fd, &udp_p);
 					if (rc > 0)
 						handle_topic(&udp_p);
 					else {
-						fprintf(stderr, "udp client topic submission error\n");
+						fprintf(server_log, "udp client topic submission error\n");
+					}
+				} else if (poll_fds[i].fd == tcp_fd) {
+					// Received new connection
+					struct sockaddr_in cli_addr;
+					socklen_t cli_len = sizeof(cli_addr);
+					int newsockfd = accept(tcp_fd, (struct sockaddr *)&cli_addr, &cli_len);
+					DIE(newsockfd < 0, "accept");
+
+					poll_fds[nr_fds].fd = newsockfd;
+					poll_fds[nr_fds].events = POLLIN;
+					nr_fds++;
+
+					fprintf(server_log, "New from %s : %d, at %d socket\n",
+						inet_ntoa(cli_addr.sin_addr), ntohs(cli_addr.sin_port), newsockfd);
+				} else {
+					// Received packet from tcp client
+					int rc = recv_all(poll_fds[i].fd, &tcp_p, sizeof(tcp_p));
+					DIE(rc < 0, "recv");
+
+					if (rc == 0) {
+						// Connection closed
+						close(poll_fds[i].fd);
+
+						memmove(&poll_fds[i], &poll_fds[i + 1], sizeof(struct pollfd) * (nr_fds - i - 1));
+						nr_fds--;
+						fprintf(server_log, "Connecton closed with client at %d socket\n", poll_fds[i].fd);
+					} else {
+						handle_tcp_client_request();
 					}
 				}
 			}
