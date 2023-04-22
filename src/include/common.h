@@ -30,6 +30,7 @@ struct __attribute__((__packed__)) udp_client_packet {
 struct udp_client_info {
 	struct udp_client_packet packet;
 	sockaddr_in addr;
+	int payload_len;
 };
 
 struct __attribute__((__packed__)) app_header {
@@ -39,15 +40,19 @@ struct __attribute__((__packed__)) app_header {
 	uint16_t msg_len;
 };
 
-typedef struct {
-	bool operator()(const char *s1, const char *s2) const {
-		return strcmp(s1, s2);
-	}
-} cmp_char_array;
+struct __attribute__((__packed__)) app_packet {
+	app_header hdr;
+	char payload[1550];
+};
 
-typedef struct {
+struct tcp_client {
+	tcp_client() {
+		fd = -1;
+	}
+	std::string name;
 	int fd;
-	std::map<char *, uint8_t, cmp_char_array> subscriptions;
-} tcp_client;
+	std::map<std::string, uint8_t> subscriptions;
+	std::vector<std::shared_ptr<char>> msg_queue;
+};
 
 #endif
