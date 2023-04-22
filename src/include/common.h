@@ -4,16 +4,21 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <string.h>
+#include <map>
+
 int send_all(int sockfd, void *buff, size_t len);
 int recv_all(int sockfd, void *buff, size_t len);
 
 #define PAYLOAD_MAXSIZE 1500
 
-enum subject : int8_t {
+enum subject: int8_t {
 	SEND_MSG = 0,
-	SUBSCRIBE = 1,
-	SUBSCRIBE_SF = 2,
-	UNSUBSCRIBE = 3
+	START_CONN = 1,
+	SUBSCRIBE = 2,
+	SUBSCRIBE_SF = 3,
+	UNSUBSCRIBE = 4,
+	REFUSE_CONN = -1
 };
 
 struct __attribute__((__packed__)) udp_client_packet {
@@ -29,9 +34,20 @@ struct udp_client_info {
 
 struct __attribute__((__packed__)) app_header {
 	char client_id[10];
-	subject sync;	
+	subject sync;
 	uint8_t topic_len;
-	uint8_t msg_len;
+	uint16_t msg_len;
 };
+
+typedef struct {
+	bool operator()(const char *s1, const char *s2) const {
+		return strcmp(s1, s2);
+	}
+} cmp_char_array;
+
+typedef struct {
+	int fd;
+	std::map<char *, uint8_t, cmp_char_array> subscriptions;
+} tcp_client;
 
 #endif

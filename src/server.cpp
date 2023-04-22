@@ -10,6 +10,11 @@
 #include <unistd.h>
 #include <netinet/tcp.h>
 
+#include <string>
+#include <map>
+#include <vector>
+#include <memory>
+
 #include "die.h"
 #include "common.h"
 
@@ -23,12 +28,33 @@ int receive_topic(int fd, struct udp_client_info *udp_info) {
 	return rc;
 }
 
-void handle_topic(udp_client_info *udp_info) {
+void handle_topic(udp_client_info *udp_info,
+	std::map < char *, std::vector<std::shared_ptr<tcp_client>>, cmp_char_array > topics,
+	std::map < char *, tcp_client, cmp_char_array> clients) {
 
 }
 
-void handle_tcp_client_request() {
+void handle_tcp_client_request(int client_fd, app_header *app_hdr,
+	std::map < char *, std::vector<std::shared_ptr<tcp_client>>, cmp_char_array > topics,
+	std::map < char *, tcp_client, cmp_char_array> clients) {
+	tcp_client client = clients[app_hdr->client_id];
 
+	// Check if client is already connected
+	if (client.fd != client_fd) {
+		app_hdr->sync = REFUSE_CONN;
+		send_all(client_fd, app_hdr, sizeof(*app_hdr));
+		return;
+	}
+	// Check if client is has just started the connection
+	if (app_hdr->sync == START_CONN) {
+		client.fd = client_fd;
+		return;
+	}
+	if (app_hdr->sync == SUBSCRIBE) {
+		if (!client.subscriptions.count(app_hdr->client_id)) {
+			
+		}
+	}
 }
 
 int main(int argc, char const *argv[]) {
@@ -37,20 +63,23 @@ int main(int argc, char const *argv[]) {
 		return 1;
 	}
 
-	// Disable stdout buffering
-	setvbuf(stdout, NULL, _IONBF, BUFSIZ);
-
+	uint16_t port;
 	struct sockaddr_in servaddr;
 	int tcp_fd, udp_fd, rc;
 
-	struct udp_client_info udp_p;
-	struct app_header tcp_p;
+	struct udp_client_info udp_info;
+	struct app_header app_hdr;
+
+	std::map < char *, std::vector<std::shared_ptr<tcp_client>>, cmp_char_array > topics;
+	std::map < char *, tcp_client, cmp_char_array> clients;
 
 	// Create server log
 	FILE *server_log = fopen("server.log", "w");
 
+	// Disable stdout buffering
+	setvbuf(stdout, NULL, _IONBF, BUFSIZ);
+
 	// Save server port number as number
-	uint16_t port;
 	rc = sscanf(argv[1], "%hu", &port);
 	DIE(rc != 1, "Given port is invalid");
 
@@ -103,9 +132,9 @@ int main(int argc, char const *argv[]) {
 		for (int i = 0; i < nr_fds; i++) {
 			if (poll_fds[i].revents & POLLIN) {
 				if (poll_fds[i].fd == udp_fd) {
-					rc = receive_topic(poll_fds[i].fd, &udp_p);
+					rc = receive_topic(poll_fds[i].fd, &udp_info);
 					if (rc > 0)
-						handle_topic(&udp_p);
+						handle_topic(&udp_info, topics, clients);
 					else {
 						fprintf(server_log, "udp client topic submission error\n");
 					}
@@ -124,7 +153,7 @@ int main(int argc, char const *argv[]) {
 						inet_ntoa(cli_addr.sin_addr), ntohs(cli_addr.sin_port), newsockfd);
 				} else {
 					// Received packet from tcp client
-					int rc = recv_all(poll_fds[i].fd, &tcp_p, sizeof(tcp_p));
+					int rc = recv_all(poll_fds[i].fd, &app_hdr, sizeof(app_hdr));
 					DIE(rc < 0, "recv");
 
 					if (rc == 0) {
@@ -135,7 +164,7 @@ int main(int argc, char const *argv[]) {
 						nr_fds--;
 						fprintf(server_log, "Connecton closed with client at %d socket\n", poll_fds[i].fd);
 					} else {
-						handle_tcp_client_request();
+						handle_tcp_client_request(poll_fds[i].fd, &app_hdr, topics, clients);
 					}
 				}
 			}
