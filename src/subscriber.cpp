@@ -31,6 +31,7 @@ void send_subscribe_request(int sock_fd, char *client_id, char *topic, int sf_op
 
 	memcpy(send_buff + sizeof(app_header), topic, topic_len);
 	send_all(sock_fd, send_buff, send_len);
+	printf("Subscribed to topic.\n");
 }
 
 void send_unsubscribe_request(int sock_fd, char *client_id, char *topic) {
@@ -45,6 +46,7 @@ void send_unsubscribe_request(int sock_fd, char *client_id, char *topic) {
 
 	memcpy(send_buff + sizeof(app_header), topic, topic_len);
 	send_all(sock_fd, send_buff, send_len);
+	printf("Unsubscribed to topic.\n");
 }
 
 int receive_app_packet(int sock_fd, char *client_id) {
@@ -60,7 +62,7 @@ int receive_app_packet(int sock_fd, char *client_id) {
 	sockaddr_in udp_client_addr;
 	rc = recv_all(sock_fd, &udp_client_addr, sizeof(udp_client_addr));
 	DIE(rc < 0, "recv");
-	char topic[50];
+	char topic[51] = { 0 };
 	rc = recv_all(sock_fd, topic, app_hdr.topic_len);
 	DIE(rc < 0, "recv");
 	char *message = new char[app_hdr.msg_len];
@@ -76,14 +78,12 @@ int receive_app_packet(int sock_fd, char *client_id) {
 		int64_t number = ntohl(*((uint32_t *)(message + 1)));
 		if (sign == 1)
 			number = -number;
-		printf("%s:%hd - %s - %d - %ld\n", addr_string, ntohs(udp_client_addr.sin_port),
-			topic, app_hdr.data_type, number);
+		printf("%s - INT - %ld\n", topic, number);
 	}break;
 	case 1: {
 		float number = ntohs(*((uint16_t *)(message)));
 		number /= 100;
-		printf("%s:%hd - %s - %d - %.2f\n", addr_string, ntohs(udp_client_addr.sin_port),
-			topic, app_hdr.data_type, number);
+		printf("%s - SHORT_REAL - %.2f\n", topic, number);
 	}break;
 	case 2: {
 		uint8_t sign = *((uint8_t *)(message));
@@ -95,13 +95,11 @@ int receive_app_packet(int sock_fd, char *client_id) {
 		}
 		if (sign == 1)
 			number = -number;
-		printf("%s:%hd - %s - %d - %f\n", addr_string, ntohs(udp_client_addr.sin_port),
-			topic, app_hdr.data_type, number);
+		printf("%s - FLOAT - %f\n", topic, number);
 
 	}break;
 	case 3: {
-		printf("%s:%hd - %s - %d - %s\n", addr_string, ntohs(udp_client_addr.sin_port),
-			topic, app_hdr.data_type, message);
+		printf("%s - STRING - %s\n", topic, message);
 	}break;
 	}
 	return 1;
@@ -112,6 +110,7 @@ int main(int argc, char const *argv[]) {
 		printf("\n Usage: %s <CLIENT_ID> <IP_SERVER> <PORT_SERVER>\n", argv[0]);
 		return 1;
 	}
+
 	char client_id[20];
 	uint16_t port;
 	struct sockaddr_in servaddr;
@@ -165,16 +164,17 @@ int main(int argc, char const *argv[]) {
 		for (int i = 0; i < nr_fds; i++) {
 			if (poll_fds[i].revents & POLLIN) {
 				if (poll_fds[i].fd == STDIN_FILENO) {
-					char command[20];
-					scanf("%s", command);
+					char line[100];
+					fgets(line, 100, stdin);
+					char *command = strtok(line, " ");
+					rc = sscanf(line, "%s", command);
 					if (!strcmp(command, "subscribe")) {
-						char topic[50];
-						int sf_option;
-						scanf("%s %d", topic, &sf_option);
+						char *topic = strtok(NULL, " ");
+						int sf_option = atoi(strtok(NULL, " "));
 						send_subscribe_request(sock_fd, client_id, topic, sf_option);
 					} else if (!strcmp(command, "unsubscribe")) {
 						char topic[50];
-						scanf("%s", topic);
+						sscanf(line, "%s", topic);
 						send_unsubscribe_request(sock_fd, client_id, topic);
 					} else if (!strcmp(command, "exit"))
 						goto exit;

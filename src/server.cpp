@@ -16,6 +16,8 @@ void handle_new_entry(udp_client_info *udp_info,
 	std::map < std::string, std::vector<std::shared_ptr<tcp_client>> > &topics,
 	std::map < std::string, std::shared_ptr<tcp_client>> &clients) {
 	int topic_len = strlen(udp_info->packet.topic);
+	if (topic_len > 50)
+		topic_len = 50;
 	int send_len = sizeof(app_header) + sizeof(sockaddr_in) +
 		topic_len + udp_info->payload_len;
 	char *send_buff = new char[send_len]();
@@ -59,6 +61,7 @@ void handle_tcp_client_request(int cli_fd, app_header *app_hdr,
 	if (client->fd != -1 && client->fd != cli_fd) {
 		app_hdr->sync = REFUSE_CONN;
 		send_all(cli_fd, app_hdr, sizeof(*app_hdr));
+		printf("Client %s already connected.\n", app_hdr->client_id);
 		return;
 	}
 	// Check if client is has just started the connection
@@ -99,7 +102,7 @@ void handle_tcp_client_request(int cli_fd, app_header *app_hdr,
 	}
 	if (app_hdr->sync == UNSUBSCRIBE) {
 		client->subscriptions.erase(topic);
-		auto topic_clients = topics[topic];
+		auto &topic_clients = topics[topic];
 		for (auto &topic_cli : topic_clients) {
 			if (topic_cli.get() == client) {
 				std::swap(topic_cli, topic_clients.back());
@@ -204,9 +207,9 @@ int main(int argc, char const *argv[]) {
 					nr_fds++;
 				} else if (poll_fds[i].fd == STDIN_FILENO) {
 					// Read from stdin
-					char command[20];
-					scanf("%s", command);
-					if (!strcmp(command, "exit"))
+					char line[100];
+					fgets(line, 100, stdin);
+					if (!strncmp(line, "exit", 4))
 						goto exit;
 				} else {
 					// Received packet from tcp client
@@ -219,7 +222,7 @@ int main(int argc, char const *argv[]) {
 						for (auto it = clients.begin(); it != clients.end(); it++) {
 							if (it->second.get()->fd == poll_fds[i].fd) {
 								it->second.get()->fd = -1;
-								printf("Client %s disconected.\n", it->first.c_str());
+								printf("Client %s disconnected.\n", it->first.c_str());
 							}
 						}
 						cli_ip_ports.erase(poll_fds[i].fd);
