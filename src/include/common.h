@@ -1,11 +1,22 @@
 #ifndef __COMMON_H__
 #define __COMMON_H__
 
-#include <stddef.h>
-#include <stdint.h>
-
+#include <arpa/inet.h>
+#include <errno.h>
+#include <netinet/in.h>
+#include <poll.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <netinet/tcp.h>
+
+#include <string>
 #include <map>
+#include <vector>
+#include <memory>
 
 int send_all(int sockfd, void *buff, size_t len);
 int recv_all(int sockfd, void *buff, size_t len);
@@ -36,13 +47,9 @@ struct udp_client_info {
 struct __attribute__((__packed__)) app_header {
 	char client_id[10];
 	subject sync;
+	uint8_t data_type;
 	uint8_t topic_len;
 	uint16_t msg_len;
-};
-
-struct __attribute__((__packed__)) app_packet {
-	app_header hdr;
-	char payload[1550];
 };
 
 struct tcp_client {

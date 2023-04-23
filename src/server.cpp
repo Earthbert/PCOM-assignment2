@@ -1,26 +1,7 @@
-#include <arpa/inet.h>
-#include <errno.h>
-#include <netinet/in.h>
-#include <poll.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <unistd.h>
-#include <netinet/tcp.h>
-
-#include <string>
-#include <map>
-#include <vector>
-#include <memory>
-
-#include "die.h"
 #include "common.h"
+#include "die.h"
 
 #define MAX_FDS 100
-
-static FILE *server_log;
 
 int receive_topic(int fd, struct udp_client_info *udp_info) {
 	socklen_t udp_client_addr_len = sizeof(udp_info->addr);
@@ -33,15 +14,16 @@ int receive_topic(int fd, struct udp_client_info *udp_info) {
 
 void handle_new_entry(udp_client_info *udp_info,
 	std::map < std::string, std::vector<std::shared_ptr<tcp_client>> > &topics,
-	std::map < std::string, tcp_client> &clients) {
+	std::map < std::string, std::shared_ptr<tcp_client>> &clients) {
 	int topic_len = strlen(udp_info->packet.topic);
 	int send_len = sizeof(app_header) + sizeof(sockaddr_in) +
 		topic_len + udp_info->payload_len;
-	char *send_buff = new char[send_len];
+	char *send_buff = new char[send_len]();
 
 	// Prepare send buffer
 	app_header *app_hdr = (app_header *)send_buff;
 	app_hdr->sync = SEND_MSG;
+	app_hdr->data_type = udp_info->packet.data_type;
 	app_hdr->topic_len = topic_len;
 	app_hdr->msg_len = udp_info->payload_len;
 	memcpy(send_buff + sizeof(app_header), &(udp_info->addr), sizeof(sockaddr_in));
@@ -51,7 +33,7 @@ void handle_new_entry(udp_client_info *udp_info,
 		&(udp_info->packet.payload), udp_info->payload_len);
 
 	auto topic_clients = topics[udp_info->packet.topic];
-	for (auto &topic_cli : topic_clients) {
+	for (auto topic_cli : topic_clients) {
 		if (topic_cli.get()->fd != -1) {
 			memcpy(&(app_hdr->client_id), topic_cli.get()->name.c_str(),
 				strlen(topic_cli.get()->name.c_str()));
@@ -63,59 +45,63 @@ void handle_new_entry(udp_client_info *udp_info,
 	}
 }
 
-void handle_tcp_client_request(int cli_fd, app_packet *app_packet,
+void handle_tcp_client_request(int cli_fd, app_header *app_hdr,
 	std::map < std::string, std::vector<std::shared_ptr<tcp_client>> > &topics,
-	std::map < std::string, tcp_client> &clients,
+	std::map < std::string, std::shared_ptr<tcp_client>> &clients,
 	std::map < int, sockaddr_in> &cli_ip_ports) {
-	tcp_client client = clients[app_packet->hdr.client_id];
+
+	if (!clients.count(app_hdr->client_id)) {
+		clients[app_hdr->client_id] = std::shared_ptr<tcp_client>(new tcp_client);
+	}
+	auto client = clients[app_hdr->client_id].get();
 
 	// Check if client is already connected
-	if (client.fd != -1 && client.fd != cli_fd) {
-		app_packet->hdr.sync = REFUSE_CONN;
-		send_all(cli_fd, app_packet, sizeof(*app_packet));
+	if (client->fd != -1 && client->fd != cli_fd) {
+		app_hdr->sync = REFUSE_CONN;
+		send_all(cli_fd, app_hdr, sizeof(*app_hdr));
 		return;
 	}
 	// Check if client is has just started the connection
-	if (app_packet->hdr.sync == START_CONN) {
-		client.name = app_packet->hdr.client_id;
-		client.fd = cli_fd;
+	if (app_hdr->sync == START_CONN) {
+		client->name = app_hdr->client_id;
+		client->fd = cli_fd;
 		sockaddr_in cli_addr = cli_ip_ports[cli_fd];
-		printf("New client %s connected from %hd:%s\n.", app_packet->hdr.client_id,
+		printf("New client %s connected from %hd:%s\n.", app_hdr->client_id,
 			cli_addr.sin_port, inet_ntoa(cli_addr.sin_addr));
-		while (!client.msg_queue.empty()) {
-			auto msg = client.msg_queue.back();
+		while (!client->msg_queue.empty()) {
+			auto msg = client->msg_queue.back();
 			app_header *app_hdr = (app_header *)msg.first.get();
-			strcpy(app_hdr->client_id, client.name.c_str());
+			strcpy(app_hdr->client_id, client->name.c_str());
 			send_all(cli_fd, msg.first.get(), msg.second);
-			client.msg_queue.pop_back();
+			client->msg_queue.pop_back();
 		}
 		return;
 	}
 	char topic[50] = { 0 };
-	memcpy(topic, app_packet->payload, app_packet->hdr.topic_len);
+	recv_all(cli_fd, topic, app_hdr->topic_len);
 	// Handle subscribe request
-	if (app_packet->hdr.sync == SUBSCRIBE || app_packet->hdr.sync == SUBSCRIBE_SF) {
-		if (app_packet->hdr.sync == SUBSCRIBE)
-			client.subscriptions[topic] = 0;
+	if (app_hdr->sync == SUBSCRIBE || app_hdr->sync == SUBSCRIBE_SF) {
+		if (app_hdr->sync == SUBSCRIBE)
+			client->subscriptions[topic] = 0;
 		else
-			client.subscriptions[topic] = 1;
-		auto topic_clients = topics[topic];
+			client->subscriptions[topic] = 1;
+		auto &topic_clients = topics[topic];
 		bool client_found = false;
-		for (auto &topic_cli : topic_clients) {
-			if (topic_cli.get() == &client) {
+		for (auto topic_cli : topic_clients) {
+			if (topic_cli.get() == client) {
 				client_found = true;
 				break;
 			}
 		}
 		if (!client_found)
-			topic_clients.push_back(std::shared_ptr<tcp_client>(&client));
+			topic_clients.push_back(clients[app_hdr->client_id]);
 		return;
 	}
-	if (app_packet->hdr.sync == UNSUBSCRIBE) {
-		client.subscriptions.erase(topic);
+	if (app_hdr->sync == UNSUBSCRIBE) {
+		client->subscriptions.erase(topic);
 		auto topic_clients = topics[topic];
 		for (auto &topic_cli : topic_clients) {
-			if (topic_cli.get() == &client) {
+			if (topic_cli.get() == client) {
 				std::swap(topic_cli, topic_clients.back());
 				topic_clients.pop_back();
 				break;
@@ -126,7 +112,7 @@ void handle_tcp_client_request(int cli_fd, app_packet *app_packet,
 
 int main(int argc, char const *argv[]) {
 	if (argc != 2) {
-		printf("\n Usage: %s <port>\n", argv[0]);
+		printf("\n Usage: %s <PORT>\n", argv[0]);
 		return 1;
 	}
 
@@ -135,10 +121,10 @@ int main(int argc, char const *argv[]) {
 	int tcp_fd, udp_fd, rc;
 
 	struct udp_client_info udp_info;
-	struct app_packet app_hdr;
+	struct app_header app_hdr;
 
 	std::map < std::string, std::vector<std::shared_ptr<tcp_client>> > topics;
-	std::map < std::string, tcp_client> clients;
+	std::map < std::string, std::shared_ptr<tcp_client>> clients;
 	std::map < int, sockaddr_in> cli_ip_ports;
 
 	// Disable stdout buffering
@@ -185,7 +171,7 @@ int main(int argc, char const *argv[]) {
 	// Set up poll
 	struct pollfd poll_fds[MAX_FDS];
 	int nr_fds = 3;
-	// Add both server sockets to poll
+	// Add both server sockets to poll and stdin
 	poll_fds[0].fd = tcp_fd;
 	poll_fds[0].events = POLLIN;
 	poll_fds[1].fd = udp_fd;
@@ -217,9 +203,6 @@ int main(int argc, char const *argv[]) {
 					nr_fds++;
 
 					cli_ip_ports[poll_fds[i].fd] = cli_addr;
-
-					fprintf(server_log, "New from %s : %d, at %d socket\n",
-						inet_ntoa(cli_addr.sin_addr), ntohs(cli_addr.sin_port), newsockfd);
 				} else if (poll_fds[i].fd == STDIN_FILENO) {
 					// Read from stdin
 					char command[20];
@@ -235,8 +218,8 @@ int main(int argc, char const *argv[]) {
 						// Connection closed
 						close(poll_fds[i].fd);
 						for (auto it = clients.begin(); it != clients.end(); i++) {
-							if (it->second.fd == poll_fds[i].fd) {
-								it->second.fd = -1;
+							if (it->second.get()->fd == poll_fds[i].fd) {
+								it->second.get()->fd = -1;
 								printf("Client %s disconected.", it->first.c_str());
 							}
 						}
