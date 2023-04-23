@@ -20,18 +20,18 @@ void handle_new_entry(udp_client_info *udp_info,
 		topic_len = 50;
 	int send_len = sizeof(app_header) + sizeof(sockaddr_in) +
 		topic_len + udp_info->payload_len;
-	char *send_buff = new char[send_len]();
+	std::shared_ptr<char> send_buff = std::shared_ptr<char>(new char[send_len]());
 
 	// Prepare send buffer
-	app_header *app_hdr = (app_header *)send_buff;
+	app_header *app_hdr = (app_header *)send_buff.get();
 	app_hdr->sync = SEND_MSG;
 	app_hdr->data_type = udp_info->packet.data_type;
 	app_hdr->topic_len = topic_len;
 	app_hdr->msg_len = udp_info->payload_len;
-	memcpy(send_buff + sizeof(app_header), &(udp_info->addr), sizeof(sockaddr_in));
-	memcpy(send_buff + sizeof(app_header) + sizeof(sockaddr_in),
+	memcpy(send_buff.get() + sizeof(app_header), &(udp_info->addr), sizeof(sockaddr_in));
+	memcpy(send_buff.get() + sizeof(app_header) + sizeof(sockaddr_in),
 		&(udp_info->packet.topic), topic_len);
-	memcpy(send_buff + sizeof(app_header) + sizeof(sockaddr_in) + topic_len,
+	memcpy(send_buff.get() + sizeof(app_header) + sizeof(sockaddr_in) + topic_len,
 		&(udp_info->packet.payload), udp_info->payload_len);
 
 	auto topic_clients = topics[udp_info->packet.topic];
@@ -39,10 +39,10 @@ void handle_new_entry(udp_client_info *udp_info,
 		if (topic_cli.get()->fd != -1) {
 			memcpy(&(app_hdr->client_id), topic_cli.get()->name.c_str(),
 				strlen(topic_cli.get()->name.c_str()));
-			send_all(topic_cli.get()->fd, send_buff, send_len);
+			send_all(topic_cli.get()->fd, send_buff.get(), send_len);
 		} else if (topic_cli.get()->subscriptions[udp_info->packet.topic] == 1) {
 			topic_cli.get()->msg_queue
-				.push_back(std::pair(std::shared_ptr<char>(send_buff), send_len));
+				.push_back(std::pair(send_buff, send_len));
 		}
 	}
 }
@@ -173,6 +173,7 @@ int main(int argc, char const *argv[]) {
 
 	// Set up poll
 	struct pollfd poll_fds[MAX_FDS];
+	memset(poll_fds, 0, MAX_FDS * sizeof(pollfd));
 	int nr_fds = 3;
 	// Add both server sockets to poll and stdin
 	poll_fds[0].fd = tcp_fd;
