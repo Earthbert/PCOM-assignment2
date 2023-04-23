@@ -64,7 +64,7 @@ int receive_app_packet(int sock_fd, char *client_id) {
 	rc = recv_all(sock_fd, topic, app_hdr.topic_len);
 	DIE(rc < 0, "recv");
 	char *message = new char[app_hdr.msg_len];
-	rc = recv_all(sock_fd, topic, app_hdr.topic_len);
+	rc = recv_all(sock_fd, message, app_hdr.msg_len);
 	DIE(rc < 0, "recv");
 
 	char addr_string[16];
@@ -76,28 +76,31 @@ int receive_app_packet(int sock_fd, char *client_id) {
 		int64_t number = ntohl(*((uint32_t *)(message + 1)));
 		if (sign == 1)
 			number = -number;
-		printf("%s:%hd - %s - %d - %ld", addr_string, ntohs(udp_client_addr.sin_port),
+		printf("%s:%hd - %s - %d - %ld\n", addr_string, ntohs(udp_client_addr.sin_port),
 			topic, app_hdr.data_type, number);
 	}break;
 	case 1: {
-		float number = *((uint16_t *)(message));
+		float number = ntohs(*((uint16_t *)(message)));
 		number /= 100;
-		printf("%s:%hd - %s - %d - %.2f", addr_string, ntohs(udp_client_addr.sin_port),
+		printf("%s:%hd - %s - %d - %.2f\n", addr_string, ntohs(udp_client_addr.sin_port),
 			topic, app_hdr.data_type, number);
 	}break;
 	case 2: {
 		uint8_t sign = *((uint8_t *)(message));
 		float number = ntohl(*((uint32_t *)(message + 1)));
-		uint8_t pow = *((uint8_t *)(message));
-		number = number / pow;
+		uint8_t pow = *((uint8_t *)(message + 5));
+		while (pow) {
+			number /= 10;
+			pow--;
+		}
 		if (sign == 1)
 			number = -number;
-		printf("%s:%hd - %s - %d - %f", addr_string, ntohs(udp_client_addr.sin_port),
+		printf("%s:%hd - %s - %d - %f\n", addr_string, ntohs(udp_client_addr.sin_port),
 			topic, app_hdr.data_type, number);
 
 	}break;
 	case 3: {
-		printf("%s:%hd - %s - %d - %s", addr_string, ntohs(udp_client_addr.sin_port),
+		printf("%s:%hd - %s - %d - %s\n", addr_string, ntohs(udp_client_addr.sin_port),
 			topic, app_hdr.data_type, message);
 	}break;
 	}
@@ -169,7 +172,7 @@ int main(int argc, char const *argv[]) {
 						int sf_option;
 						scanf("%s %d", topic, &sf_option);
 						send_subscribe_request(sock_fd, client_id, topic, sf_option);
-					} else if (!strcmp(command, "unsubcribe")) {
+					} else if (!strcmp(command, "unsubscribe")) {
 						char topic[50];
 						scanf("%s", topic);
 						send_unsubscribe_request(sock_fd, client_id, topic);

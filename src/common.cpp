@@ -8,7 +8,6 @@
     a exact len octeți din buffer.
 */
 int recv_all(int sockfd, void *buffer, size_t len) {
-
     size_t bytes_received = 0;
     size_t bytes_remaining = len;
     char *buff = (char *)buffer;
@@ -16,8 +15,8 @@ int recv_all(int sockfd, void *buffer, size_t len) {
     while (bytes_remaining) {
         ssize_t rec;
         rec = recv(sockfd, buff + bytes_received, bytes_remaining, 0);
-        if (rec == -1)
-            return -1;
+        if (rec <= 0)
+            return rec;
         bytes_received += rec;
         bytes_remaining -= rec;
     }

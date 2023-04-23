@@ -66,7 +66,7 @@ void handle_tcp_client_request(int cli_fd, app_header *app_hdr,
 		client->name = app_hdr->client_id;
 		client->fd = cli_fd;
 		sockaddr_in cli_addr = cli_ip_ports[cli_fd];
-		printf("New client %s connected from %hd:%s\n.", app_hdr->client_id,
+		printf("New client %s connected from %hu:%s.\n", app_hdr->client_id,
 			cli_addr.sin_port, inet_ntoa(cli_addr.sin_addr));
 		while (!client->msg_queue.empty()) {
 			auto msg = client->msg_queue.back();
@@ -198,11 +198,10 @@ int main(int argc, char const *argv[]) {
 					int newsockfd = accept(tcp_fd, (struct sockaddr *)&cli_addr, &cli_len);
 					DIE(newsockfd < 0, "accept");
 
+					cli_ip_ports[newsockfd] = cli_addr;
 					poll_fds[nr_fds].fd = newsockfd;
 					poll_fds[nr_fds].events = POLLIN;
 					nr_fds++;
-
-					cli_ip_ports[poll_fds[i].fd] = cli_addr;
 				} else if (poll_fds[i].fd == STDIN_FILENO) {
 					// Read from stdin
 					char command[20];
@@ -217,10 +216,10 @@ int main(int argc, char const *argv[]) {
 					if (rc == 0) {
 						// Connection closed
 						close(poll_fds[i].fd);
-						for (auto it = clients.begin(); it != clients.end(); i++) {
+						for (auto it = clients.begin(); it != clients.end(); it++) {
 							if (it->second.get()->fd == poll_fds[i].fd) {
 								it->second.get()->fd = -1;
-								printf("Client %s disconected.", it->first.c_str());
+								printf("Client %s disconected.\n", it->first.c_str());
 							}
 						}
 						cli_ip_ports.erase(poll_fds[i].fd);

@@ -26,4 +26,4 @@ $(BUILD_DIR)/subscriber.o: $(SRC_DIR)/subscriber.cpp
 .PHONY: clean
 
 clean:
-	rm -rf server subscriber $(BUILD_DIR)
+	rm -rf server subscriber $(BUILD_DIR)/*o
