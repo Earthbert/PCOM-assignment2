@@ -52,7 +52,7 @@ struct tcp_client {
 	std::string name;
 	int fd;
 	std::map<std::string, uint8_t> subscriptions;
-	std::vector<std::shared_ptr<char>> msg_queue;
+	std::vector<std::pair<std::shared_ptr<char>, int>> msg_queue;
 };
 
 #endif

@@ -57,7 +57,8 @@ void handle_new_entry(udp_client_info *udp_info,
 				strlen(topic_cli.get()->name.c_str()));
 			send_all(topic_cli.get()->fd, send_buff, send_len);
 		} else if (topic_cli.get()->subscriptions[udp_info->packet.topic] == 1) {
-			topic_cli.get()->msg_queue.push_back(std::shared_ptr<char>(send_buff));
+			topic_cli.get()->msg_queue
+				.push_back(std::pair(std::shared_ptr<char>(send_buff), send_len));
 		}
 	}
 }
@@ -81,6 +82,13 @@ void handle_tcp_client_request(int cli_fd, app_packet *app_packet,
 		sockaddr_in cli_addr = cli_ip_ports[cli_fd];
 		printf("New client %s connected from %hd:%s\n.", app_packet->hdr.client_id,
 			cli_addr.sin_port, inet_ntoa(cli_addr.sin_addr));
+		while (!client.msg_queue.empty()) {
+			auto msg = client.msg_queue.back();
+			app_header *app_hdr = (app_header *)msg.first.get();
+			strcpy(app_hdr->client_id, client.name.c_str());
+			send_all(cli_fd, msg.first.get(), msg.second);
+			client.msg_queue.pop_back();
+		}
 		return;
 	}
 	char topic[50] = { 0 };
