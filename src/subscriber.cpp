@@ -170,11 +170,18 @@ int main(int argc, char const *argv[]) {
 					rc = sscanf(line, "%s", command);
 					if (!strcmp(command, "subscribe")) {
 						char *topic = strtok(NULL, " ");
-						int sf_option = atoi(strtok(NULL, " "));
-						send_subscribe_request(sock_fd, client_id, topic, sf_option);
+						if (!topic)
+							continue;
+						char *sf_str = strtok(NULL, " ");
+						if (!sf_str)
+							continue;
+						int sf_option = atoi(sf_str);
+						if (sf_option == 0 || sf_option == 1)
+							send_subscribe_request(sock_fd, client_id, topic, sf_option);
 					} else if (!strcmp(command, "unsubscribe")) {
-						char topic[50];
-						sscanf(line, "%s", topic);
+						char *topic = strtok(NULL, " ");
+						if (!topic)
+							continue;
 						send_unsubscribe_request(sock_fd, client_id, topic);
 					} else if (!strcmp(command, "exit"))
 						goto exit;
