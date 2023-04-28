@@ -13,8 +13,8 @@ int receive_topic(int fd, struct udp_client_info *udp_info) {
 }
 
 void handle_new_entry(udp_client_info *udp_info,
-	std::map < std::string, std::vector<std::shared_ptr<tcp_client>> > &topics,
-	std::map < std::string, std::shared_ptr<tcp_client>> &clients) {
+	std::unordered_map <std::string, std::vector<std::shared_ptr<tcp_client>>> &topics,
+	std::unordered_map <std::string, std::shared_ptr<tcp_client>> &clients) {
 	int topic_len = strlen(udp_info->packet.topic);
 	if (topic_len > 50)
 		topic_len = 50;
@@ -48,9 +48,9 @@ void handle_new_entry(udp_client_info *udp_info,
 }
 
 void handle_tcp_client_request(int cli_fd, app_header *app_hdr,
-	std::map < std::string, std::vector<std::shared_ptr<tcp_client>> > &topics,
-	std::map < std::string, std::shared_ptr<tcp_client>> &clients,
-	std::map < int, sockaddr_in> &cli_ip_ports) {
+	std::unordered_map<std::string, std::vector<std::shared_ptr<tcp_client>>> &topics,
+	std::unordered_map<std::string, std::shared_ptr<tcp_client>> &clients,
+	std::unordered_map<int, sockaddr_in> &cli_ip_ports) {
 
 	if (!clients.count(app_hdr->client_id)) {
 		clients[app_hdr->client_id] = std::shared_ptr<tcp_client>(new tcp_client);
@@ -126,9 +126,9 @@ int main(int argc, char const *argv[]) {
 	struct udp_client_info udp_info;
 	struct app_header app_hdr;
 
-	std::map < std::string, std::vector<std::shared_ptr<tcp_client>> > topics;
-	std::map < std::string, std::shared_ptr<tcp_client>> clients;
-	std::map < int, sockaddr_in> cli_ip_ports;
+	std::unordered_map<std::string, std::vector<std::shared_ptr<tcp_client>>> topics;
+	std::unordered_map<std::string, std::shared_ptr<tcp_client>> clients;
+	std::unordered_map<int, sockaddr_in> cli_ip_ports;
 
 	// Disable stdout buffering
 	setvbuf(stdout, NULL, _IONBF, BUFSIZ);
