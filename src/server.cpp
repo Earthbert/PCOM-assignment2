@@ -1,7 +1,7 @@
 #include "common.h"
 #include "die.h"
 
-#define MAX_FDS 100
+#define MAX_CONNECTIONS 500
 
 int receive_topic(int fd, struct udp_client_info *udp_info) {
 	socklen_t udp_client_addr_len = sizeof(udp_info->addr);
@@ -168,25 +168,21 @@ int main(int argc, char const *argv[]) {
 	DIE(rc < 0, "udp failed");
 
 	// Make tcp_fd passive
-	rc = listen(tcp_fd, MAX_FDS);
+	rc = listen(tcp_fd, MAX_CONNECTIONS);
 	DIE(rc < 0, "listen");
 
 	// Set up poll
-	struct pollfd poll_fds[MAX_FDS];
-	memset(poll_fds, 0, MAX_FDS * sizeof(pollfd));
-	int nr_fds = 3;
+	std::vector<pollfd> poll_fds;
+
 	// Add both server sockets to poll and stdin
-	poll_fds[0].fd = tcp_fd;
-	poll_fds[0].events = POLLIN;
-	poll_fds[1].fd = udp_fd;
-	poll_fds[1].events = POLLIN;
-	poll_fds[2].fd = STDIN_FILENO;
-	poll_fds[2].events = POLLIN;
+	poll_fds.push_back(pollfd{ tcp_fd, POLLIN, 0 });
+	poll_fds.push_back(pollfd{ udp_fd, POLLIN, 0 });
+	poll_fds.push_back(pollfd{ STDIN_FILENO, POLLIN, 0 });
 
 	while (1) {
-		poll(poll_fds, nr_fds, -1);
+		poll(poll_fds.data(), poll_fds.size(), -1);
 
-		for (int i = 0; i < nr_fds; i++) {
+		for (size_t i = 0; i < poll_fds.size(); i++) {
 			if (poll_fds[i].revents & POLLIN) {
 				if (poll_fds[i].fd == udp_fd) {
 					rc = receive_topic(poll_fds[i].fd, &udp_info);
@@ -203,9 +199,7 @@ int main(int argc, char const *argv[]) {
 					DIE(newsockfd < 0, "accept");
 
 					cli_ip_ports[newsockfd] = cli_addr;
-					poll_fds[nr_fds].fd = newsockfd;
-					poll_fds[nr_fds].events = POLLIN;
-					nr_fds++;
+					poll_fds.push_back(pollfd{ newsockfd, POLLIN, 0 });
 				} else if (poll_fds[i].fd == STDIN_FILENO) {
 					// Read from stdin
 					char line[100];
@@ -227,8 +221,7 @@ int main(int argc, char const *argv[]) {
 							}
 						}
 						cli_ip_ports.erase(poll_fds[i].fd);
-						memmove(&poll_fds[i], &poll_fds[i + 1], sizeof(struct pollfd) * (nr_fds - i - 1));
-						nr_fds--;
+						poll_fds.erase(poll_fds.begin() + i);
 					} else {
 						handle_tcp_client_request(poll_fds[i].fd, &app_hdr, topics, clients, cli_ip_ports);
 					}
@@ -240,7 +233,7 @@ int main(int argc, char const *argv[]) {
 exit:
 	close(poll_fds[0].fd);
 	close(poll_fds[1].fd);
-	for (int i = 3; i < nr_fds; i++)
+	for (size_t i = 3; i < poll_fds.size(); i++)
 		close(poll_fds[i].fd);
 	return 0;
 }
