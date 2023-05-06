@@ -4,17 +4,21 @@
 #define MAX_CONNECTIONS 500
 
 int receive_topic(int fd, struct udp_client_info *udp_info) {
+
 	socklen_t udp_client_addr_len = sizeof(udp_info->addr);
 	int rc = recvfrom(fd, &(udp_info->packet), sizeof(udp_info->packet), 0,
 		(struct sockaddr *)&(udp_info->addr), &udp_client_addr_len);
+		
 	udp_info->payload_len = rc - sizeof(udp_client_info::packet.topic) -
 		sizeof(udp_client_info::packet.data_type);
+
 	return rc;
 }
 
 void handle_new_entry(udp_client_info *udp_info,
 	std::unordered_map <std::string, std::vector<std::shared_ptr<tcp_client>>> &topics,
 	std::unordered_map <std::string, std::shared_ptr<tcp_client>> &clients) {
+
 	int topic_len = strlen(udp_info->packet.topic);
 	if (topic_len > 50)
 		topic_len = 50;
@@ -34,6 +38,7 @@ void handle_new_entry(udp_client_info *udp_info,
 	memcpy(send_buff.get() + sizeof(app_header) + sizeof(sockaddr_in) + topic_len,
 		&(udp_info->packet.payload), udp_info->payload_len);
 
+	// Send message and store it for later if subscriber is not connected
 	auto topic_clients = topics[udp_info->packet.topic];
 	for (auto topic_cli : topic_clients) {
 		if (topic_cli.get()->fd != -1) {
@@ -148,7 +153,7 @@ int main(int argc, char const *argv[]) {
 	// Make port reusable, in case we run this really fast two times in a row
 	{
 		int enable = 1;
-		setsockopt(tcp_fd, SOL_SOCKET, SO_REUSEADDR | TCP_NODELAY, &enable, sizeof(int));
+		setsockopt(tcp_fd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int));
 		DIE(tcp_fd < 0, "setsockopt failed");
 
 		setsockopt(udp_fd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int));
@@ -174,7 +179,7 @@ int main(int argc, char const *argv[]) {
 	// Set up poll
 	std::vector<pollfd> poll_fds;
 
-	// Add both server sockets to poll and stdin
+	// Add both server sockets and stdin to poll
 	poll_fds.push_back(pollfd{ tcp_fd, POLLIN, 0 });
 	poll_fds.push_back(pollfd{ udp_fd, POLLIN, 0 });
 	poll_fds.push_back(pollfd{ STDIN_FILENO, POLLIN, 0 });
