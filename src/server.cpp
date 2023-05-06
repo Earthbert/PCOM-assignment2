@@ -149,10 +149,10 @@ int main(int argc, char const *argv[]) {
 	{
 		int enable = 1;
 		setsockopt(tcp_fd, SOL_SOCKET, SO_REUSEADDR | TCP_NODELAY, &enable, sizeof(int));
-		DIE(tcp_fd < 0, "setsockopt(SO_REUSEADDR) failed");
+		DIE(tcp_fd < 0, "setsockopt failed");
 
 		setsockopt(udp_fd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int));
-		DIE(udp_fd < 0, "setsockopt(SO_REUSEADDR) failed");
+		DIE(udp_fd < 0, "setsockopt failed");
 	}
 
 	// Fill the details on what destination port should be
@@ -197,6 +197,10 @@ int main(int argc, char const *argv[]) {
 					socklen_t cli_len = sizeof(cli_addr);
 					int newsockfd = accept(tcp_fd, (struct sockaddr *)&cli_addr, &cli_len);
 					DIE(newsockfd < 0, "accept");
+
+					int enable = 1;
+					setsockopt(newsockfd, SOL_SOCKET, SO_REUSEADDR | TCP_NODELAY, &enable, sizeof(int));
+					DIE(newsockfd < 0, "setsockopt failed");
 
 					cli_ip_ports[newsockfd] = cli_addr;
 					poll_fds.push_back(pollfd{ newsockfd, POLLIN, 0 });
